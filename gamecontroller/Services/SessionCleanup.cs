@@ -57,6 +57,10 @@ public class SessionCleanupService : BackgroundService
 		{
 			return true; // no such process
 		}
+		catch (InvalidOperationException)
+		{
+			return true; // process object no longer valid
+		}
 	}
 
 	private void KillQuietly(GameInstance instance)

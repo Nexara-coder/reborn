@@ -1,0 +1,45 @@
+Map names for fixed-servers.csv (the Map column). These are the same choices as the
+in-game "RCON Admin" > Create Game menu.
+
+Story
+  PvE_Prologue_P        Prologue
+  Caverns_P             The Algorithm
+  Portal_P              Void's Edge
+  Captains_P            The Renegade
+  Evacuation_P          The Archive
+  Ruins_P               Sentinel
+  Observatory_p         The Experiment
+  Refinery_P            The Saboteur
+  Cathedral_P           Heliophage
+
+Operations
+  Slums_P               Attikus and the Thrall Rebellion
+  Toby_Raid_P           Toby's Friendship Raid
+  CullingFacility_P     Oscar Mike vs the Battleschool
+  TallTales_P           Montana and the Demon Bear
+  Heart_Ekkunar_P       Phoebe and the Heart of Ekkunar
+
+Supercharge
+  Wishbone_P            Ziggurat
+  Ripple_P              Horizon
+  Cascade_P             Permafrost
+
+Incursion
+  Viaduct_P             Echelon
+  Snowdrift_P           Monuments
+  Inc_Stronghold2_P     Overgrowth
+
+Capture
+  Ravine_P              Outback
+  Snowblind_P           Snowblind
+  BlissRuins_P          Temples
+
+Meltdown
+  SlumScort_P           Outskirts
+  Skirmish_P            Paradise
+  IceScort_P            Coldsnap
+
+Face-Off
+  Snowblind_Headhunter_P   Snowblind
+  Ravine_Headhunter_P      Outback
+  BlissRuins_Headhunter_P  Temples

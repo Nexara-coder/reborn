@@ -1,0 +1,78 @@
+name: Build self-host kit
+
+on:
+  push:
+    branches: [nexara-selfhost]
+    tags: ['kit-*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Build reborn.dll and dxgi.dll
+        shell: pwsh
+        run: |
+          $out = "$env:GITHUB_WORKSPACE\out\mod\"
+          msbuild reborn\reborn.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:OutDir=$out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          msbuild dxgi\dxgi.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:OutDir=$out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem $out
+
+      - name: Publish coordinator (self-contained, no .NET install needed)
+        shell: pwsh
+        run: |
+          dotnet publish gamecontroller\gamecontroller.csproj -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=false -o out\coordinator
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Assemble player and host kits
+        shell: pwsh
+        run: |
+          $mod = 'out\mod'
+          foreach ($kit in 'player','host') {
+            $dir = "out\BattlebornReborn-$kit"
+            New-Item -ItemType Directory -Force "$dir\mod" | Out-Null
+            Copy-Item "$mod\reborn.dll","$mod\dxgi.dll" "$dir\mod\"
+            Copy-Item "selfhost\$kit\*" $dir -Recurse
+            Copy-Item 'selfhost\common\*' $dir
+            Copy-Item 'selfhost\README.md','LICENSE.txt' $dir
+          }
+          Copy-Item out\coordinator 'out\BattlebornReborn-host\coordinator' -Recurse
+          Compress-Archive 'out\BattlebornReborn-player\*' 'out\BattlebornReborn-player.zip' -Force
+          # Host installer stamps the host's address into this and puts it on the desktop.
+          Copy-Item 'out\BattlebornReborn-player.zip' 'out\BattlebornReborn-host\'
+          Compress-Archive 'out\BattlebornReborn-host\*' 'out\BattlebornReborn-host.zip' -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BattlebornReborn-player
+          path: out/BattlebornReborn-player.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BattlebornReborn-host
+          path: out/BattlebornReborn-host.zip
+
+      - name: Attach to release (tags kit-*)
+        if: startsWith(github.ref, 'refs/tags/kit-')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/BattlebornReborn-player.zip
+            out/BattlebornReborn-host.zip
+          body: |
+            Built from ${{ github.sha }}. Source: ${{ github.server_url }}/${{ github.repository }} (AGPL-3.0).
+            Players: download BattlebornReborn-player.zip. Hosts: BattlebornReborn-host.zip.

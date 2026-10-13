@@ -1,0 +1,3 @@
+# Host: put your server browser address on the line below before sending this kit to players.
+# Format: host:port   e.g.  bb.nexarastudios.ca:5000   or   yourname.duckdns.org:5000
+CHANGE-ME:5000

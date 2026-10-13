@@ -1,4 +1,5 @@
 using gamecontroller.Singletons;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +21,17 @@ builder.Services.AddSingleton<DatabaseSessions>();
 builder.Services.AddHostedService<SessionCleanupService>();
 
 var app = builder.Build();
+
+// Create or upgrade telemetry.db so server telemetry posts don't fail on a fresh install.
+try
+{
+    app.Services.GetRequiredService<DatabaseSessions>().TelemetryContext.Database.Migrate();
+}
+catch (Exception ex)
+{
+    // Telemetry is optional; never let it stop the server browser from starting.
+    app.Logger.LogError(ex, "Telemetry database setup failed; continuing without telemetry");
+}
 
 // Configure the HTTP request pipeline.
 
