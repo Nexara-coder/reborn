@@ -28,7 +28,7 @@ namespace gamecontroller.Controllers
 		{
 			if (HttpContext.Request.Headers.TryGetValue("X-Server-Token", out var authHeader))
 			{
-				foreach (GameInstance instance in _gameSessions.gameInstances)
+				foreach (GameInstance instance in _gameSessions.Snapshot())
 				{
 					if (instance.ServerAuthToken.Equals(authHeader))
 					{
@@ -60,7 +60,7 @@ namespace gamecontroller.Controllers
 		{
 			if (HttpContext.Request.Headers.TryGetValue("X-Server-Token", out var authHeader))
 			{
-				foreach (GameInstance instance in _gameSessions.gameInstances)
+				foreach (GameInstance instance in _gameSessions.Snapshot())
 				{
 					if (instance.ServerAuthToken.Equals(authHeader))
 					{

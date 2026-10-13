@@ -3,9 +3,41 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <cstdlib>
+#include <fstream>
 
 namespace Constants {
-    const std::string GameCoordinatorEndpoint = "gc.bereborn.dev:5000";
+    // Which game coordinator (server browser) to use, in priority order:
+    //   1. First non-empty line of reborn_server.txt next to the game exe (Binaries\Win64)
+    //   2. REBORN_GC_ENDPOINT environment variable
+    //   3. The official Reborn coordinator
+    // Example value: "bb.nexarastudios.ca:5000" or "192.168.1.50:5000"
+    inline std::string ReadGameCoordinatorEndpoint() {
+        char* exePath = nullptr;
+        if (_get_pgmptr(&exePath) == 0 && exePath && *exePath) {
+            std::string path(exePath);
+            size_t slash = path.find_last_of("\\/");
+            std::ifstream file(path.substr(0, slash + 1) + "reborn_server.txt");
+            std::string line;
+            while (file && std::getline(file, line)) {
+                line.erase(0, line.find_first_not_of(" \t\r\n"));
+                line.erase(line.find_last_not_of(" \t\r\n") + 1);
+                if (!line.empty() && line[0] != '#') return line;
+            }
+        }
+
+        char* value = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&value, &len, "REBORN_GC_ENDPOINT") == 0 && value) {
+            std::string endpoint(value);
+            free(value);
+            if (!endpoint.empty()) return endpoint;
+        }
+
+        return "gc.bereborn.dev:5000";
+    }
+
+    inline const std::string GameCoordinatorEndpoint = ReadGameCoordinatorEndpoint();
 
     const std::vector<std::string> CharacterSelectCharacterTable = {
         "Alani",

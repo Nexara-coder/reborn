@@ -1,5 +1,9 @@
 #include "Init.hpp"
 
+#include <optional>
+#include <string>
+#include <iostream>
+
 namespace Init {
     void Globals() {
         Globals::baseAddress = (size_t)GetModuleHandleA(nullptr);
@@ -159,6 +163,33 @@ namespace Init {
         LPWSTR cmdLine = GetCommandLineW();
         int argc;
         LPWSTR* argv = CommandLineToArgvW(cmdLine, &argc);
+
+        // Standalone server overrides (ignored in coordinator mode), e.g.
+        //   Serverborn.exe -SEEKFREEPACKAGEMAP -SEEKFREELOADINGPCCONSOLE -RebornPort=7778 -RebornMap=Wishbone_P -RebornPlayers=10
+        for (int i = 1; i < argc; i++) {
+            std::wstring arg(argv[i]);
+            auto valueOf = [&arg](const std::wstring& key) -> std::optional<std::wstring> {
+                if (arg.size() > key.size() && _wcsnicmp(arg.c_str(), key.c_str(), key.size()) == 0) {
+                    return arg.substr(key.size());
+                }
+                return std::nullopt;
+            };
+
+            try {
+                if (auto v = valueOf(L"-RebornPort=")) {
+                    ServerSettings::gamePort = std::stoi(*v);
+                }
+                else if (auto v = valueOf(L"-RebornPlayers=")) {
+                    ServerSettings::NumPlayersToStart = (unsigned int)std::stoi(*v);
+                }
+                else if (auto v = valueOf(L"-RebornMap=")) {
+                    ServerSettings::MapString = _wcsdup((L"open " + *v).c_str());
+                }
+            }
+            catch (const std::exception&) {
+                std::wcout << L"[NETWORKING] Ignoring malformed argument: " << arg << std::endl;
+            }
+        }
 
         if (argc > 3) {
             if (std::wstring(argv[3]).contains(L"GameCoordinator")) {

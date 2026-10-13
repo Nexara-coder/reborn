@@ -129,6 +129,8 @@ namespace gamecontroller
 
         public DateTime? LastUpdateTime;
 
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
 		public GameInstance(GameCreationConfig config, string publicip, int port) { 
             this.InstanceName = config.InstanceName;
             this.HumanReadableInstanceMapMode = config.HumanReadableInstanceMapMode;

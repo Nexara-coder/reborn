@@ -9,62 +9,7 @@ namespace gamecontroller.Controllers
     [Route("api/games")]
     public class Game : ControllerBase
     {
-        private RCONAuth _RCONAuth;   
-
-        private List<GameInstance> GetGameInstances()
-        {
-            return _gameSessions.gameInstances;
-        }
-
-        private async Task<string> GetPublicIp()
-        {
-            HttpClient httpClient = new HttpClient();
-
-            var response = await httpClient.GetAsync("https://checkip.amazonaws.com");
-
-            return (await response.Content.ReadAsStringAsync()).Replace("\n", "");
-        }
-
-        private int? GetFreePort()
-        {
-            List<int> freePorts = new List<int>();
-
-            foreach (var port in _gameSessions.ports)
-            {
-                bool taken = false;
-
-                foreach (var instance in GetGameInstances())
-                {
-                    if (instance.ServerConfig.Port == port)
-                    {
-                        taken = true;
-                        break;
-                    }
-                }
-
-                if (!taken)
-                {
-                    freePorts.Add(port);
-                }
-            }
-
-            return freePorts.Count > 0 ? freePorts[0] : null;
-        }
-
-        private async Task<GameInstance> StartGameInstance(GameCreationConfig config)
-        {
-            int port = GetFreePort().Value;
-
-            string serverIp = await GetPublicIp();
-
-            GameInstance instance = new GameInstance(config, serverIp, port);
-
-            var proc = Process.Start(new ProcessStartInfo("Serverborn.exe", "-SEEKFREEPACKAGEMAP -SEEKFREELOADINGPCCONSOLE GameCoordinator localhost:5000 "+instance.ServerAuthToken));
-
-            instance.PID = proc.Id;
-
-            return instance;
-        }
+        private readonly RCONAuth _RCONAuth;
 
         private readonly ILogger<Game> _logger;
 
@@ -77,65 +22,136 @@ namespace gamecontroller.Controllers
             _gameSessions = sessions;
         }
 
+        // Caller must hold _gameSessions.Lock.
+        private int? GetFreePort()
+        {
+            HashSet<int> inUse = _gameSessions.gameInstances.Select(instance => instance.ServerConfig.Port).ToHashSet();
+
+            foreach (int port in _gameSessions.ports)
+            {
+                if (!inUse.Contains(port))
+                {
+                    return port;
+                }
+            }
+
+            return null;
+        }
+
         [HttpGet]
         public List<GameInstance> Get()
         {
-			return GetGameInstances();
+            return _gameSessions.Snapshot();
         }
 
+        // Creating a match requires "Authorization: Bearer <RCON_TOKEN>" (the "RCON Password" box in the overlay).
         [HttpPost]
         public async Task<bool> Post([FromBody] GameCreationConfig config)
         {
-            if(await _RCONAuth.HasValidRCONAuth(HttpContext) && GetFreePort().HasValue)
+            if (!await _RCONAuth.HasValidRCONAuth(HttpContext))
             {
-                GameInstance newInstance = await StartGameInstance(config);
+                HttpContext.Response.StatusCode = 401;
+                return false;
+            }
 
-                _gameSessions.gameInstances.Add(newInstance);
+            string publicHost = await _gameSessions.GetPublicHost();
+
+            GameInstance instance;
+
+            lock (_gameSessions.Lock)
+            {
+                int? port = GetFreePort();
+
+                if (!port.HasValue)
+                {
+                    _logger.LogWarning("No free game ports; raise GAME_PORT_COUNT to allow more concurrent matches.");
+                    HttpContext.Response.StatusCode = 503;
+                    return false;
+                }
+
+                instance = new GameInstance(config, publicHost, port.Value);
+
+                // Reserve the port before the process starts so a second request can't take it.
+                _gameSessions.gameInstances.Add(instance);
+            }
+
+            try
+            {
+                string fullPath = Path.GetFullPath(_gameSessions.ServerbornPath);
+
+                // Argument order matters: Init::ServerConfig reads argv[3]=="GameCoordinator", argv[4]=coordinator, argv[5]=server token.
+                var startInfo = new ProcessStartInfo(fullPath,
+                    "-SEEKFREEPACKAGEMAP -SEEKFREELOADINGPCCONSOLE GameCoordinator " + _gameSessions.InternalUrl + " " + instance.ServerAuthToken)
+                {
+                    WorkingDirectory = Path.GetDirectoryName(fullPath) ?? Directory.GetCurrentDirectory(),
+                    UseShellExecute = false
+                };
+
+                Process? proc = Process.Start(startInfo);
+
+                if (proc == null)
+                {
+                    throw new InvalidOperationException("Process.Start returned null");
+                }
+
+                instance.PID = proc.Id;
+
+                _logger.LogInformation("Started Serverborn PID {Pid} on port {Port} for \"{Name}\"", proc.Id, instance.ServerConfig.Port, instance.InstanceName);
 
                 return true;
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to start Serverborn at {Path}. Check SERVERBORN_PATH.", _gameSessions.ServerbornPath);
 
-            return false;
+                lock (_gameSessions.Lock)
+                {
+                    _gameSessions.gameInstances.Remove(instance);
+                }
+
+                HttpContext.Response.StatusCode = 500;
+                return false;
+            }
         }
 
         [HttpGet("server-config")]
         public ServerConfig? GetServerConfig()
         {
-			if (HttpContext.Request.Headers.TryGetValue("X-Server-Token", out var authHeader))
+            if (HttpContext.Request.Headers.TryGetValue("X-Server-Token", out var authHeader))
             {
-                foreach(GameInstance instance in GetGameInstances())
+                foreach (GameInstance instance in _gameSessions.Snapshot())
                 {
-                    if(instance.ServerAuthToken.Equals(authHeader))
+                    if (instance.ServerAuthToken == authHeader.ToString())
                     {
                         return instance.ServerConfig;
                     }
                 }
             }
 
-			HttpContext.Response.StatusCode = 401;
+            HttpContext.Response.StatusCode = 401;
             return null;
         }
 
         [HttpPost("server-poll")]
         public void PostServerPoll([FromBody] ServerPollUpdate update)
         {
-			if (HttpContext.Request.Headers.TryGetValue("X-Server-Token", out var authHeader))
-			{
-				foreach (GameInstance instance in GetGameInstances())
-				{
-					if (instance.ServerAuthToken.Equals(authHeader))
-					{
+            if (HttpContext.Request.Headers.TryGetValue("X-Server-Token", out var authHeader))
+            {
+                foreach (GameInstance instance in _gameSessions.Snapshot())
+                {
+                    if (instance.ServerAuthToken == authHeader.ToString())
+                    {
                         instance.CurrentNumPlayers = update.ConnectedPlayers;
                         instance.LastUpdateTime = DateTime.UtcNow;
                         instance.MatchStarted = update.HumansHaveStarted;
 
-						HttpContext.Response.StatusCode = 200;
-						return;
-					}
-				}
-			}
+                        HttpContext.Response.StatusCode = 200;
+                        return;
+                    }
+                }
+            }
+
             HttpContext.Response.StatusCode = 401;
-            return;
         }
     }
 }
